@@ -1,0 +1,127 @@
+---
+title: "Assignment2"
+author: "Yu Tang"
+date: "2025-08-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## data load
+
+```{r}
+library(readxl)
+library(tidyverse)
+nameless <- read_xlsx("electorate_profiles_2020-data_file.xlsx", sheet="Percent", range = readxl::cell_limits(c(6, 2), c(NA, NA)), col_names=FALSE)#GPT
+namestuff <- read_xlsx("electorate_profiles_2020-data_file.xlsx",sheet="Percent",range="B4:UH5",col_names=FALSE)
+electorate_col <- read_xlsx("electorate_profiles_2020-data_file.xlsx", sheet = "Percent", range = "A6:A79", col_names = "electorate") |> drop_na() 
+```
+
+## excel data cleaning
+
+
+```{r}
+top    <- unlist(namestuff[1, ])
+bottom <- unlist(namestuff[2, ])
+clean_names <- paste(top, bottom, sep = " ") |>
+  str_squish()
+demo <- bind_cols(electorate_col, setNames(nameless, clean_names))
+```
+
+
+## csv data cleaning
+
+```{r}
+library(janitor)
+vote_data <- read_csv("votes2023.csv", show_col_types = FALSE) |>
+  select(-1) |>
+  clean_names() |>
+  mutate(govt_total_votes = 
+           national_party + act_new_zealand + new_zealand_first_party)
+str(vote_data)
+final_data <- demo |>
+  inner_join(vote_data |>
+               select(electorate, govt_total_votes), by="electorate")
+
+```
+## responable variable
+```{r}
+y <- final_data$govt_total_votes
+X <- final_data |>
+  select(-electorate, -govt_total_votes) |>
+  mutate(across(where(is.character), as.factor)) |>
+  mutate(across(where(is.factor), as.numeric)) |>
+  as.matrix()
+
+```
+
+## Ridge Regression
+```{r}
+library(glmnet)
+library(tidyr)
+cv_ridge <- cv.glmnet(X, y, alpha = 0, standardize = TRUE)
+dim(X)
+summary(y)
+sd(y)
+
+```
+
+## plot 1
+```{r}
+fit <- cv.glmnet(X, y, alpha = 0, standardize = TRUE)
+plot(fit)
+best_lambda <- fit$lambda.min
+
+```
+## plot 2
+```{r}
+xval <-glmnet(X,y, alpha = 0)
+plot(xval)
+
+
+```
+## final model
+
+```{r}
+#coef(fit, s=xval$lambda.min)
+
+ridge_model <- glmnet(X, y, alpha=0, lambda=best_lambda)
+
+coef(ridge_model)
+
+```
+
+## mse and rmse
+```{r}
+cv_mse <- min(cv_ridge$cvm)
+cv_rmse <- sqrt(cv_mse)
+cv_rmse
+```
+
+## prediction
+```{r}
+y_pred <- predict(cv_ridge, s = "lambda.min", newx = X)
+plot(y, y_pred, 
+     xlab = "Actual Votes", ylab = "Predicted Votes",
+     main = "Ridge Regression Predictions",
+     pch = 19, col = "blue")
+abline(0, 1, col = "red", lwd = 2)
+
+
+```
+
+## report 
+
+### introduction
+The purpose of this analysis is to build a predictive model for the total votes received by the three parties: National, ACT, and New Zealand First. We combine the data set electorate_profiles_2020-data_file.xlsx has demographic data for each New Zealand electorate, computed by Stats New Zealand for Parliament.  And the data set votes2023.csv has the number of votes for each registered political party in each electorate. This report details the data preparation, modeling process, and evaluation of predictive performance using Ridge Regression.
+
+### result
+I applied 10-fold cross-validation (cv.glmnet) to select lambda. The best λ was chosen as the one minimizing MSPE. The cross-validation curve shows the relationship between λ and prediction error. The lambda.min was selected where the mean-squared error was minimized. The coefficient plot illustrates how predictor coefficients shrink as lambda increases.
+The scatter plot of predicted vs. actual government votes demonstrates that the model predictions closely follow the 45-degree line.
+The Ridge regression model achieved good predictive accuracy, with relatively low error at the chosen lambda according to the model fit.
+The predictions showed strong agreement with actual values, confirming the suitability of Ridge regression for this task.
+
+## Citations and Acknowledgements
+I have used chatgpt to load the data while choosing the range of the excel "range = readxl::cell_limits(c(6, 2), c(NA, NA))" to exclude the first column for easy combination of the whole table

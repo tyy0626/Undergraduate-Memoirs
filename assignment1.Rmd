@@ -1,0 +1,112 @@
+---
+title: "Assignment1"
+author: "Yu Tang"
+date: "2025-08-06"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(purrr)
+```
+
+# load data
+```{r}
+seismic_files_28<- list.files("C:/Users/tang/Desktop/work/stats_369/seismic/28",pattern=".csv",full=TRUE)
+seismic_data_28<-map(seismic_files_28,read_csv, show_col_types = FALSE, col_names = FALSE)
+seismic_files_29<- list.files("C:/Users/tang/Desktop/work/stats_369/seismic/29",pattern=".csv",full=TRUE)
+seismic_data_29<-map(seismic_files_29,read_csv, show_col_types = FALSE, col_names = FALSE)
+```
+
+# sd for data of each minute of the day
+```{r}
+seismic_min <- function(df, hour_number) {
+  df |>
+    mutate(X2 = as.numeric(X2)) |>
+    filter(!is.na(X2)) |>
+    mutate(
+      row_index = row_number(),
+      minute_in_hour = (row_index - 1) %/% 1080,
+      minute_of_day = hour_number * 60 + minute_in_hour
+    ) |>
+    group_by(minute_of_day) |>
+    summarise(sd = sd(X2, na.rm = TRUE), .groups = "drop")
+}
+
+#colnames(seismic_data_28[[1]])
+
+sd_per_minute_28 <- map2_dfr(seismic_data_28, 0:23, seismic_min)
+sd_per_minute_29 <- map2_dfr(seismic_data_29, 0:23, seismic_min)
+```
+
+# plot 29
+```{r}
+ggplot(
+  data = sd_per_minute_29, mapping = aes(minute_of_day, sd)
+) + 
+  labs(x = "minute of day 29", y = "standard deviation for each minute", title = "plot of standard deviation of the height displacement for each minute of the day") +
+  geom_col()
+
+```
+
+
+# regression model of minute of the day 29
+```{r}
+sd_lm_29 <- sd_per_minute_29 |>
+  mutate(
+    daytime_29 = ifelse(minute_of_day >= 360 & minute_of_day <= 1020, 1, 0),
+    peak_commuting_time_29 = ifelse(
+      (minute_of_day >= 420 & minute_of_day <= 540) |
+      (minute_of_day >= 960 & minute_of_day <= 1080), 1, 0
+    )
+  )
+
+model_29 <- lm(sd ~ daytime_29 + peak_commuting_time_29, data = sd_lm_29)
+summary(model_29)
+```
+We find that daytime of every minute of the day(6am to 5pm) is significantly reduced compare with the night time (-2.66) as the p-value is smaller than 0.001. The peak commuting time is not statically significant as long as that the p-value is 0.404 which is larger than 0.05. 
+
+# sd for data of each hour of the day
+```{r}
+hourly_sd <- function(df, hour_number) {
+  df %>%
+    mutate(X2 = as.numeric(X2)) %>%
+    filter(!is.na(X2)) %>%
+    summarise(
+      hour = hour_number,
+      sd = sd(X2, na.rm = TRUE),
+      .groups = "drop"
+    )
+}
+sd_per_hour_29 <- map2_dfr(seismic_data_29, 0:23, hourly_sd)
+```
+
+# regression model of hour per day 29
+```{r}
+sd_lm_hour_29 <- sd_per_hour_29 |>
+  mutate(
+    daytime = ifelse(hour >= 6 & hour < 17, 1, 0),
+    peak_commute = ifelse(hour %in% c(6, 7, 8, 9, 16, 17, 18), 1, 0)
+  )
+lm_hour <- lm(sd ~ daytime + peak_commute, data = sd_lm_hour_29)
+summary(lm_hour)
+```
+The hourly-level regression model does not provide strong evidence of a relationship. We find that daytime of every minute of the day(6am to 5pm) is significantly reduced compare with the night time (-2.59) but not statically significant as the p-value is larger than 0.05. The peak commuting time is not statically significant as long as that the p-value is 0.404 which is larger than 0.05. Neither daytime nor peak commuting time are statically significant. 
+We can see that minute-level data is a more statistically significant model which shows that daytime reduces the seismic noise but peak commuting time is not influential. 
+# regression model of minute of the day 28
+```{r}
+sd_lm_28 <- sd_per_minute_28 |>
+  mutate(
+    daytime_28 = ifelse(minute_of_day >= 360 & minute_of_day <= 1020, 1, 0),
+    peak_commuting_time_28 = ifelse(
+      (minute_of_day >= 420 & minute_of_day <= 540) |
+      (minute_of_day >= 960 & minute_of_day <= 1080), 1, 0
+    )
+  )
+
+model_28 <- lm(sd ~ daytime_28 + peak_commuting_time_28, data = sd_lm_28)
+summary(model_28)
+```
+
+Daytime has a significant negative effect on seismic noise (p < 0.001) which reducing the standard deviation by 5.76 units on average. Peak commuting time shows a small negative effect, but it is not statistically significant (p = 0.542).
